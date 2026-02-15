@@ -2,9 +2,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from fpdf import FPDF
-from io import BytesIO
+import io
 
-# 1. Configuração inicial
+# 1. Configuração inicial (Primeira linha sempre)
 st.set_page_config(page_title="Auditor Contábil Pro", layout="wide")
 
 # Sinônimos para as colunas
@@ -91,18 +91,30 @@ if f_raz:
                 c_pdf, c_erp = st.columns(2)
                 with c_pdf:
                     if st.button("Gerar PDF Detalhado"):
-                        pdf = FPDF(); pdf.add_page(); pdf.set_font('Arial', 'B', 14)
-                        pdf.cell(0, 10, 'RELATORIO DE AUDITORIA', align='C', ln=1); pdf.ln(5)
+                        pdf = FPDF()
+                        pdf.add_page()
+                        pdf.set_font('Arial', 'B', 14)
+                        pdf.cell(0, 10, 'RELATORIO DE AUDITORIA', align='C', ln=True)
+                        pdf.ln(5)
                         
-                        pdf.set_font('Arial', 'B', 10); pdf.cell(0, 10, 'RESUMO POR MAQUINA', ln=1)
+                        pdf.set_font('Arial', 'B', 10)
+                        pdf.cell(0, 10, 'RESUMO POR MAQUINA', ln=True)
                         for k, v in res_maq.items():
                             tx = (v['despesa']/v['bruto']*100) if v['bruto'] > 0 else 0
                             pdf.set_font('Arial', '', 9)
-                            pdf.cell(0, 8, f"{k}: Bruto R$ {v['bruto']:,.2f} | Taxa: {tx:.2f}%", ln=1)
+                            pdf.cell(0, 8, f"{k}: Bruto R$ {v['bruto']:,.2f} | Taxa: {tx:.2f}%", ln=True)
                         
-                        # Correção do erro AttributeError: output agora retorna bytes diretamente
+                        # SOLUÇÃO PARA O ERRO: Converter para bytearray
                         pdf_bytes = pdf.output()
-                        st.download_button("📥 Baixar PDF", data=pdf_bytes, file_name="auditoria.pdf", mime="application/pdf")
+                        if isinstance(pdf_bytes, str):
+                            pdf_bytes = pdf_bytes.encode('latin-1')
+                        
+                        st.download_button(
+                            label="📥 Baixar PDF",
+                            data=pdf_bytes,
+                            file_name="auditoria.pdf",
+                            mime="application/pdf"
+                        )
                 
                 with c_erp:
                     erp_data = []
