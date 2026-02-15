@@ -4,10 +4,10 @@ import numpy as np
 from fpdf import FPDF
 import io
 
-# 1. Configuração inicial (Obrigatório ser a primeira linha)
+# 1. Configuração inicial
 st.set_page_config(page_title="Auditor Contábil Pro", layout="wide")
 
-# Sinônimos para busca de colunas
+# Sinônimos para as colunas
 S_DATA = ['DATA', 'DATA DA VENDA', 'DT. VENDA', 'DATA TRANSAÇÃO', 'DATA MOVIMENTO', 'VENCIMENTO', 'DATA OPERAÇÃO']
 S_BRUTO = ['VALOR', 'VALOR BRUTO', 'VLR BRUTO', 'VALOR TOTAL', 'VALOR VENDA', 'BRUTO', 'DÉBITO', 'DEBITO']
 S_LIQ = ['VALOR LIQUIDO', 'VLR LIQUIDO', 'VALOR LÍQUIDO', 'LÍQUIDO', 'RECEBIDO', 'VALOR PAGAMENTO']
@@ -90,29 +90,29 @@ if f_raz:
                 
                 c_pdf, c_erp = st.columns(2)
                 with c_pdf:
-                    # NOVA LÓGICA DE PDF COM BUFFER DE MEMÓRIA
+                    # GERAÇÃO DO PDF SEM PARÂMETROS OBSOLETOS
                     pdf = FPDF()
                     pdf.add_page()
-                    pdf.set_font('Arial', 'B', 14)
+                    pdf.set_font('helvetica', 'B', 14)
                     pdf.cell(0, 10, 'RELATORIO DE AUDITORIA', align='C', ln=True)
                     pdf.ln(5)
                     
-                    pdf.set_font('Arial', 'B', 10)
+                    pdf.set_font('helvetica', 'B', 10)
                     pdf.cell(0, 10, 'RESUMO POR MAQUINA', ln=True)
                     for k, v in res_maq.items():
                         tx = (v['despesa']/v['bruto']*100) if v['bruto'] > 0 else 0
-                        pdf.set_font('Arial', '', 9)
+                        pdf.set_font('helvetica', '', 9)
                         pdf.cell(0, 8, f"{k}: Bruto R$ {v['bruto']:,.2f} | Taxa: {tx:.2f}%", ln=True)
                     
-                    # Transformando o PDF em Bytes puros (Solução para o Unsupported Error)
-                    output_pdf = io.BytesIO()
-                    pdf_content = pdf.output(dest='S').encode('latin-1')
-                    output_pdf.write(pdf_content)
-                    output_pdf.seek(0)
-                    
+                    # O método output() sem argumentos retorna bytes na fpdf2
+                    try:
+                        pdf_bytes = pdf.output()
+                    except:
+                        pdf_bytes = pdf.output(dest='S').encode('latin-1')
+
                     st.download_button(
                         label="📥 Baixar PDF",
-                        data=output_pdf,
+                        data=pdf_bytes,
                         file_name="auditoria.pdf",
                         mime="application/pdf"
                     )
