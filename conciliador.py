@@ -1,61 +1,48 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import io
 
-# Configuração da Página
-st.set_page_config(page_title="Conciliador Contábil", layout="wide")
+# Título da Página no Navegador
+st.set_page_config(page_title="Conciliador Escritório", layout="wide")
 
+st.title("🏦 Sistema de Conciliação Contábil")
+st.info("Arraste os ficheiros das operadoras para processar o consolidado.")
+
+# Função padrão para tratar valores financeiros brasileiros
 def clean_money(val):
-    if pd.isna(val) or str(val).lower() == 'nan': return 0.0
-    s = str(val).replace('R$', '').replace('\xa0', '').replace(' ', '').strip()
+    if pd.isna(val): return 0.0
+    s = str(val).replace('R$', '').replace(' ', '').strip()
     if ',' in s and '.' in s:
         if s.find('.') < s.find(','): s = s.replace('.', '').replace(',', '.')
     elif ',' in s: s = s.replace(',', '.')
     try: return float(s)
     except: return 0.0
 
-st.title("🚀 Sistema de Conciliação - Escritório")
-st.markdown("Selecione ou arraste as planilhas das operadoras abaixo.")
+# Área de Upload
+files = st.file_uploader("Upload de Ficheiros (CSV)", accept_multiple_files=True)
 
-# Upload de múltiplos arquivos
-uploaded_files = st.file_uploader("Arraste os arquivos .csv ou .xlsx aqui", accept_multiple_files=True)
-
-if uploaded_files:
-    consolidado = []
-    
-    for file in uploaded_files:
-        nome = file.name.upper()
-        # Leitura binária para funcionar no navegador
-        content = file.read()
-        
-        # Exemplo de lógica para CAIXA (Adaptar para as outras 10 operadoras aqui)
+if files:
+    lista_final = []
+    for f in files:
+        nome = f.name.upper()
+        # Exemplo simplificado para teste (CAIXA)
         if "CAIXA" in nome:
-            df = pd.read_csv(io.BytesIO(content))
-            df = df[df['Status'] == 'Aprovada'].copy()
-            res = pd.DataFrame({
-                'Data': pd.to_datetime(df['Data da venda'], dayfirst=True).dt.strftime('%d/%m/%Y'),
+            df = pd.read_csv(f)
+            # Regra: Apenas Aprovadas
+            df = df[df['Status'] == 'Aprovada']
+            temp = pd.DataFrame({
+                'Data': df['Data da venda'],
                 'Operadora': 'Caixa',
-                'Valor_Bruto': df['Valor bruto da parcela'].apply(clean_money),
-                'Despesas': df['Valor da taxa (MDR)'].apply(clean_money),
+                'Bruto': df['Valor bruto da parcela'].apply(clean_money),
                 'Descricao': 'Venda Caixa'
             })
-            consolidado.append(res)
-            
-        # (Repetir a lógica de identificação para Mercado Pago, Cielo, Rede, etc.)
-
-    if consolidado:
-        df_final = pd.concat(consolidado, ignore_index=True)
-        st.success(f"Processado com sucesso! {len(df_final)} registros encontrados.")
+            lista_final.append(temp)
+    
+    if lista_final:
+        df_consolidado = pd.concat(lista_final)
+        st.success("Processamento concluído!")
+        st.dataframe(df_consolidado)
         
-        # Preview dos dados
-        st.dataframe(df_final)
-
-        # Botão para baixar o resultado
-        csv = df_final.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
-        st.download_button(
-            label="📥 BAIXAR CONSOLIDADO PARA O ERP",
-            data=csv,
-            file_name="CONSOLIDADO_ESCRITORIO.csv",
-            mime="text/csv",
-        )
+        # Botão de Download
+        csv = df_consolidado.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
+        st.download_button("📥 Descarregar Consolidado", data=csv, file_name="resultado.csv")
