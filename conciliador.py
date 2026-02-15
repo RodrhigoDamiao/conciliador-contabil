@@ -2,8 +2,9 @@ import streamlit as st
 import pandas as pd
 import io
 
-st.set_page_config(page_title="Conciliador Pro", layout="wide")
+st.set_page_config(page_title="Conciliador Contábil Pro", layout="wide")
 
+# Função de limpeza financeira que definimos
 def clean_money(val):
     if pd.isna(val): return 0.0
     s = str(val).replace('R$', '').replace(' ', '').strip()
@@ -13,69 +14,99 @@ def clean_money(val):
     try: return float(s)
     except: return 0.0
 
-st.title("🏦 Conciliador Multiformato (CSV, XLS, XLSX)")
-st.info("Arraste qualquer arquivo de operadora abaixo.")
+st.title("🏦 Sistema de Conciliação por Operadora")
+st.markdown("1. Suba os arquivos | 2. Selecione a Operadora | 3. Baixe o Consolidado")
 
-uploaded_files = st.file_uploader("Upload", accept_multiple_files=True)
+# Área de Upload
+uploaded_files = st.file_uploader("Arraste todos os arquivos (CSV, XLS, XLSX)", accept_multiple_files=True)
 
 if uploaded_files:
     consolidado = []
+    st.subheader("Configuração de Arquivos")
+    
+    # Criamos colunas para a interface ficar organizada
+    col1, col2 = st.columns([2, 1])
     
     for f in uploaded_files:
-        nome = f.name.upper()
-        try:
-            # DETECÇÃO DE FORMATO
-            if nome.endswith('.CSV'):
-                # Tenta detectar separador (ponto e vírgula ou vírgula)
-                try: df = pd.read_csv(f, sep=';', encoding='utf-8-sig')
-                except: df = pd.read_csv(f, sep=',', encoding='utf-8-sig')
-            else:
-                # Trata XLS e XLSX (Excel)
-                df = pd.read_excel(f)
-
-            # LÓGICA DE IDENTIFICAÇÃO (Exemplo simplificado de 3 tipos)
-            # CAIXA
-            if "CAIXA" in nome or "STATUS" in df.columns:
-                df_c = df[df['Status'] == 'Aprovada'].copy()
-                res = pd.DataFrame({
-                    'Data': df_c.iloc[:, 2], # Ajustado para posição se coluna mudar
-                    'Operadora': 'Caixa',
-                    'Valor_Bruto': df_c.iloc[:, 12].apply(clean_money),
-                    'Descricao': 'Venda Caixa'
-                })
-                consolidado.append(res)
+        with st.container():
+            c1, c2 = st.columns([2, 1])
+            c1.write(f"📄 {f.name}")
+            # O usuário escolhe quem é a operadora deste arquivo
+            operadora = c2.selectbox(
+                "Qual é a operadora?",
+                ["Selecionar...", "Caixa", "Mercado Pago", "Cielo", "Rede", "PagBank", "Pagar.me", "Sipag", "Cabal", "Ticket", "Pluxee", "VR"],
+                key=f.name
+            )
             
-            # MERCADO PAGO
-            elif "MERCADO" in nome or "date_approved" in df.columns:
-                df_mp = df[df.iloc[:, 13] == 'approved'].copy()
-                res = pd.DataFrame({
-                    'Data': df_mp.iloc[:, 1],
-                    'Operadora': 'Mercado Pago',
-                    'Valor_Bruto': df_mp.iloc[:, 16].apply(clean_money),
-                    'Descricao': 'Venda Mercado Pago'
-                })
-                consolidado.append(res)
-                
-            # PAGARME
-            elif "PAGARME" in nome or "Valor Capturado" in df.columns:
-                df_pm = df[df['Status'] == 'Pago'].copy()
-                res = pd.DataFrame({
-                    'Data': df_pm['Data'],
-                    'Operadora': 'Pagar.me',
-                    'Valor_Bruto': df_pm['Valor Capturado (R$)'].apply(clean_money),
-                    'Descricao': 'Venda Pagar.me'
-                })
-                consolidado.append(res)
+            if operadora != "Selecionar...":
+                try:
+                    # Leitura flexível
+                    if f.name.upper().endswith('.CSV'):
+                        try: df = pd.read_csv(f, sep=';', encoding='utf-8-sig')
+                        except: df = pd.read_csv(f, sep=',', encoding='utf-8-sig')
+                    else:
+                        df = pd.read_excel(f)
 
-        except Exception as e:
-            st.error(f"Erro ao ler {f.name}: Certifique-se que o formato está correto.")
+                    # --- PROCESSAMENTO POR OPERADORA ---
+                    if operadora == "Caixa":
+                        df_c = df[df['Status'] == 'Aprovada'].copy()
+                        res = pd.DataFrame({
+                            'Data': pd.to_datetime(df_c['Data da venda'], dayfirst=True).dt.strftime('%d/%m/%Y'),
+                            'Operadora': 'Caixa',
+                            'Valor_Bruto': df_c['Valor bruto da parcela'].apply(clean_money),
+                            'Despesas': df_c['Valor da taxa (MDR)'].apply(clean_money),
+                            'Descricao': 'Venda Caixa'
+                        })
+                        consolidado.append(res)
+
+                    elif operadora == "Mercado Pago":
+                        df_mp = df[df['Status da operação (status)'] == 'approved'].copy()
+                        # Venda e Tarifa Base
+                        res = pd.DataFrame({
+                            'Data': pd.to_datetime(df_mp['Data de creditação (date_approved)'], dayfirst=True).dt.strftime('%d/%m/%Y'),
+                            'Operadora': 'Mercado Pago',
+                            'Valor_Bruto': df_mp['Valor do produto (transaction_amount)'].apply(clean_money),
+                            'Despesas': df_mp['Tarifa do Mercado Pago (mercadopago_fee)'].apply(clean_money),
+                            'Descricao': 'Venda Mercado Pago'
+                        })
+                        consolidado.append(res)
+                        # Linha de Financiamento extra
+                        df_fin = df_mp[df_mp['Custos de parcelamento (financing_fee)'].apply(clean_money).abs() > 0].copy()
+                        if not df_fin.empty:
+                            finan = pd.DataFrame({
+                                'Data': pd.to_datetime(df_fin['Data de creditação (date_approved)'], dayfirst=True).dt.strftime('%d/%m/%Y'),
+                                'Operadora': 'Mercado Pago', 'Valor_Bruto': 0.0,
+                                'Despesas': df_fin['Custos de parcelamento (financing_fee)'].apply(clean_money).abs(),
+                                'Descricao': 'Custo de parcelamento - Mercado Pago'
+                            })
+                            consolidado.append(finan)
+
+                    elif operadora == "Pagar.me":
+                        df_pm = df[df['Status'] == 'Pago'].copy()
+                        res = pd.DataFrame({
+                            'Data': pd.to_datetime(df_pm['Data']).dt.strftime('%d/%m/%Y'),
+                            'Operadora': 'Pagar.me',
+                            'Valor_Bruto': df_pm['Valor Capturado (R$)'].apply(clean_money),
+                            'Despesas': df_pm['Custo da Transação'].apply(clean_money),
+                            'Descricao': 'Venda Pagar.me'
+                        })
+                        consolidado.append(res)
+
+                    # [Adicionar os demais ELIF para as outras operadoras conforme mapeado...]
+
+                except Exception as e:
+                    st.error(f"Erro no arquivo {f.name}: Verifique se o formato interno corresponde à operadora selecionada.")
 
     if consolidado:
+        st.divider()
         df_final = pd.concat(consolidado, ignore_index=True)
-        st.success("Arquivos processados!")
+        st.success("✅ Processamento finalizado com sucesso!")
         st.dataframe(df_final)
         
         csv = df_final.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
-        st.download_button("📥 Baixar Consolidado", data=csv, file_name="CONSOLIDADO_TOTAL.csv")
-    else:
-        st.warning("Nenhum dado reconhecido. Verifique se o nome do arquivo contém o nome da operadora.")
+        st.download_button(
+            label="📥 BAIXAR CONSOLIDADO PARA O ERP",
+            data=csv,
+            file_name="CONSOLIDADO_ESCRITORIO.csv",
+            mime="text/csv"
+        )
